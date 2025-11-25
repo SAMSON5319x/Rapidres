@@ -1,13 +1,19 @@
-import numpy as np
-from sklearn.utils import shuffle
-import joblib
+import torch
+from .attacks.fgsm_pgd import fgsm, pgd
 
-def adversarial_training_retrain(model, X_clean_train, y_train, X_adv, y_adv, retrain_model_path=None):
-    X_combined = np.vstack([X_clean_train, X_adv])
-    y_combined = np.concatenate([y_train, y_adv])
-    # shuffle
-    X_combined, y_combined = shuffle(X_combined, y_combined, random_state=42)
-    model.fit(X_combined, y_combined)
-    if retrain_model_path:
-        joblib.dump(model, retrain_model_path)
-    return model
+@torch.no_grad()
+def _mix(clean_x, clean_y, adv_x, adv_y):
+    return torch.cat([adv_x, clean_x],0), torch.cat([adv_y, clean_y],0)
+
+def adversarial_training_step(model, xb, yb, *, attack, eps, step_size, steps, lo, hi, frac=0.5):
+    b = xb.size(0); k = int(b*frac)
+    if k == 0:
+        return xb, yb
+    x_sel, y_sel = xb[:k], yb[:k]
+    if attack == 'fgsm':
+        x_adv = fgsm(model, x_sel, y_sel, eps, lo, hi)
+    elif attack == 'pgd':
+        x_adv = pgd(model, x_sel, y_sel, eps, step_size, steps, lo, hi)
+    else:
+        raise ValueError("attack must be fgsm or pgd")
+    return _mix(xb[k:], yb[k:], x_adv, y_sel)

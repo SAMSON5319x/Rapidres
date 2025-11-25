@@ -1,20 +1,8 @@
-Malware Classification using Machine Learning (EMBER Dataset)
+# Adversarial Malware Detection (EMBER features)
 
-&nbsp;This project trains a machine-learning model to detect malware using the EMBER dataset.
-
-&nbsp;Steps:
-
-&nbsp;1. Install dependencies using requirements.txt
-
-&nbsp;2. Place ember\_train.csv and ember\_test.csv inside the data/ folder
-
-&nbsp;3. Run: python src/main.py
-
-&nbsp;4. The model will be trained and saved in models/lgb\_baseline.pkl
-
-&nbsp;Folder Structure:
-
-&nbsp;project/- data/- src/- requirements.txt
-
-&nbsp;Outputs:- Trained model- Evaluation metrics
-
+## Setup
+```bash
+python -m venv .venv && source .venv/bin/activate   # Windows: .venv\Scripts\activate
+pip install -r requirements.txt
+# Install CUDA-enabled PyTorch matching your system, e.g. (CUDA 12.1):
+# pip install torch --index-url https://download.pytorch.org/whl/cu121
