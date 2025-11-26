@@ -1,0 +1,9 @@
+numpy
+pandas
+scikit-learn
+lightgbm
+matplotlib
+joblib
+tqdm
+# Install a CUDA-enabled PyTorch build that matches your system, e.g. (CUDA 12.1):
+# pip install torch --index-url https://download.pytorch.org/whl/cu121

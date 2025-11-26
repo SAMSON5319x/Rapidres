@@ -1,11 +1,11 @@
 import argparse
 import torch
-from data_loader import prepare
-from train_torch import TorchTrainer
-from train_lgbm import LGBTrainer
-from attacks.transfer import SurrogateTransfer
-from models.mlp import MLP
-from eval import append_run
+from src.data_loader import prepare
+from src.train_torch import TorchTrainer
+from src.train_lgbm import LGBTrainer
+from src.attacks.transfer import SurrogateTransfer
+from src.models.mlp import MLP
+from src.eval import append_run
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--train_csv', required=True)

@@ -10,10 +10,17 @@ def load_csv(path):
     df = pd.read_csv(path)
     label = None
     for c in LABEL_CANDS:
-        if c in df.columns:
-            label = c; break
-    if label is None:
-        raise ValueError("Expected a 'label' or 'malicious' column")
+        possible_labels = ["label", "Label", "malicious", "y", "class", "target"]
+
+        label_col = None
+        for col in possible_labels:
+            if col in df.columns:
+                label_col = col
+                break
+
+            if label_col is None:
+                raise ValueError(f"No label column found. Columns available: {df.columns}")
+
     y = df[label].astype(int).values
     X = df.drop(columns=[label]).select_dtypes(include=[np.number]).fillna(0).astype(np.float32)
     return X.values, y
