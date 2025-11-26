@@ -1,0 +1,21 @@
+{
+  "torch_baseline": {
+    "clean_acc": 0.8518774130308668,
+    "clean_auc": 0.9353255252444472,
+    "rob_acc": 0.1198163595991118,
+    "rob_auc": 0.05035631843961358,
+    "attack": "pgd",
+    "eps": 0.1
+  },
+  "lgb_baseline": {
+    "clean_acc": 0.8296825301566345,
+    "clean_auc": 0.9720457186822313
+  },
+  "transfer_to_lgb": {
+    "clean_acc": 0.8296825301566345,
+    "adv_acc": 0.49846466222568964,
+    "transfer_success": 0.34298045570025404,
+    "attack": "pgd",
+    "eps": 0.1
+  }
+}

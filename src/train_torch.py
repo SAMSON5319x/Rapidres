@@ -8,13 +8,13 @@ from .models.mlp import MLP
 from .defenses import adversarial_training_step
 
 # ---------------------------------------------------------
-# Helpers: choose correct AMP scaler/autocast based on PyTorch version
+# AMP helpers (PyTorch 1.x / 2.x)
 # ---------------------------------------------------------
-if hasattr(torch, "amp"):   # New API (PyTorch ≥ 2.0)
-    AMP_SCALER = torch.amp.GradScaler
+if hasattr(torch, "amp"):   # PyTorch ≥ 2.0
+    AMP_SCALER = torch.cuda.amp.GradScaler  # still the recommended scaler
     def autocast(enabled=True):
-        return torch.amp.autocast("cuda", enabled=enabled)
-else:                       # Old API (PyTorch ≤ 1.13)
+        return torch.amp.autocast(device_type="cuda", enabled=enabled)
+else:                       # PyTorch ≤ 1.13
     AMP_SCALER = torch.cuda.amp.GradScaler
     def autocast(enabled=True):
         return torch.cuda.amp.autocast(enabled=enabled)
@@ -27,6 +27,12 @@ class TorchTrainer:
 
     def loaders(self, X_tr, y_tr, X_va, y_va, batch=4096, num_workers=0):
         """Create DataLoaders (num_workers=0 for Windows compatibility)."""
+        # Ensure numpy arrays (handles pandas Series/DataFrame too)
+        X_tr = np.asarray(X_tr, dtype=np.float32)
+        X_va = np.asarray(X_va, dtype=np.float32)
+        y_tr = np.asarray(y_tr, dtype=np.float32).reshape(-1)
+        y_va = np.asarray(y_va, dtype=np.float32).reshape(-1)
+
         tr = TensorDataset(torch.from_numpy(X_tr), torch.from_numpy(y_tr))
         va = TensorDataset(torch.from_numpy(X_va), torch.from_numpy(y_va))
 
@@ -82,7 +88,7 @@ class TorchTrainer:
 
     @torch.no_grad()
     def evaluate(self):
-        """Evaluate on validation set."""
+        """Evaluate on validation set (clean)."""
         self.model.eval()
         ys, ps, probs = [], [], []
 
@@ -94,7 +100,7 @@ class TorchTrainer:
 
             ys.append(yb.cpu().numpy())
             ps.append(pred.cpu().numpy())
-            probs.append(prob.detach().cpu().numpy())  # detach to avoid grad errors
+            probs.append(prob.detach().cpu().numpy())
 
         y = np.concatenate(ys)
         yhat = np.concatenate(ps)
@@ -104,12 +110,12 @@ class TorchTrainer:
         acc = accuracy_score(y, yhat)
         try:
             auc = roc_auc_score(y, pr)
-        except:
+        except Exception:
             auc = float("nan")
 
         return acc, auc
 
-    @torch.no_grad()
+    # NOTE: no @torch.no_grad() here — we need grads for crafting adversarial examples
     def eval_under_attack(self, attack='pgd', eps=0.1, steps=5, step_size=0.02, lo=None, hi=None):
         """Evaluate under adversarial attack."""
         from .attacks.fgsm_pgd import fgsm, pgd
@@ -120,6 +126,7 @@ class TorchTrainer:
         for xb, yb in self.va_loader:
             xb, yb = xb.to(self.device), yb.to(self.device)
 
+            # Craft adversarial batch (attacks manage their own grad context)
             if attack == "fgsm":
                 xadv = fgsm(self.model, xb, yb, eps, lo, hi)
             elif attack == "pgd":
@@ -127,13 +134,15 @@ class TorchTrainer:
             else:
                 raise ValueError("attack must be 'fgsm' or 'pgd'")
 
-            logits = self.model(xadv)
-            prob = torch.sigmoid(logits)
-            pred = (prob > 0.5).float()
+            # Evaluate on adversarial inputs without computing grads
+            with torch.no_grad():
+                logits = self.model(xadv)
+                prob = torch.sigmoid(logits)
+                pred = (prob > 0.5).float()
 
             ys.append(yb.cpu().numpy())
             ps.append(pred.cpu().numpy())
-            probs.append(prob.detach().cpu().numpy())  # detach here too
+            probs.append(prob.detach().cpu().numpy())
 
         y = np.concatenate(ys)
         yhat = np.concatenate(ps)
@@ -143,7 +152,7 @@ class TorchTrainer:
         acc = accuracy_score(y, yhat)
         try:
             auc = roc_auc_score(y, pr)
-        except:
+        except Exception:
             auc = float("nan")
 
         return acc, auc
