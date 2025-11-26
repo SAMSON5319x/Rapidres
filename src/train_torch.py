@@ -42,49 +42,62 @@ class TorchTrainer:
                                     num_workers=num_workers, pin_memory=True)
 
     def fit(self, epochs=10, lr=1e-3, wd=1e-5, amp=True,
-            adv_train=False, attack='pgd', eps=0.1,
-            pgd_steps=5, pgd_step_size=0.02, adv_frac=0.5,
-            lo=None, hi=None, ckpt=None):
-
+        adv_train=False, attack='pgd', eps=0.1,
+        pgd_steps=5, pgd_step_size=0.02, adv_frac=0.5,
+        lo=None, hi=None, ckpt=None,
+        pos_weight_val=None, label_smooth=0.0, grad_clip=1.0,
+        curriculum=True):
         opt = torch.optim.AdamW(self.model.parameters(), lr=lr, weight_decay=wd)
-        scaler = AMP_SCALER(enabled=amp)
+        scaler = torch.amp.GradScaler('cuda', enabled=amp)
         best = 0.0
+        pos_weight = None
+        if pos_weight_val is not None:
+            pos_weight = torch.tensor([pos_weight_val], device=self.device)
 
         for e in range(1, epochs + 1):
             self.model.train()
-            pbar = tqdm(self.tr_loader, desc=f"Epoch {e}/{epochs}")
+            # PGD curriculum: ramp eps and steps during training
+            cur_eps = eps * (e / epochs) if (adv_train and curriculum) else eps
+            cur_steps = max(3, int(pgd_steps * (e / epochs))) if (adv_train and curriculum) else pgd_steps
 
+            pbar = tqdm(self.tr_loader, desc=f"Epoch {e}/{epochs} (eps={cur_eps:.3f}, steps={cur_steps})")
             for xb, yb in pbar:
                 xb, yb = xb.to(self.device), yb.to(self.device)
 
                 if adv_train:
                     xb, yb = adversarial_training_step(
                         self.model, xb, yb, attack=attack,
-                        eps=eps, step_size=pgd_step_size,
-                        steps=pgd_steps, lo=lo, hi=hi,
-                        frac=adv_frac
+                        eps=cur_eps, step_size=pgd_step_size,
+                        steps=cur_steps, lo=lo, hi=hi, frac=adv_frac
                     )
 
                 opt.zero_grad(set_to_none=True)
-                with autocast(enabled=amp):
+                with torch.amp.autocast('cuda', enabled=amp):
                     logits = self.model(xb)
-                    loss = F.binary_cross_entropy_with_logits(logits, yb)
+                    # label smoothing
+                    if label_smooth > 0.0:
+                        yb = yb * (1.0 - label_smooth) + 0.5 * label_smooth
+                    loss = F.binary_cross_entropy_with_logits(
+                        logits, yb, pos_weight=pos_weight
+                    )
 
                 scaler.scale(loss).backward()
+                if grad_clip is not None:
+                    scaler.unscale_(opt)
+                    torch.nn.utils.clip_grad_norm_(self.model.parameters(), grad_clip)
                 scaler.step(opt)
                 scaler.update()
-
                 pbar.set_postfix({'loss': f'{loss.item():.4f}'})
 
             acc, auc = self.evaluate()
             print(f"Val acc={acc:.4f} auc={auc:.4f}")
-
             if acc > best and ckpt:
                 os.makedirs(os.path.dirname(ckpt), exist_ok=True)
                 torch.save({'model_state': self.model.state_dict(),
                             'val_acc': acc, 'val_auc': auc}, ckpt)
                 best = acc
                 print(f"Saved -> {ckpt}")
+
 
     @torch.no_grad()
     def evaluate(self):
